@@ -1,17 +1,33 @@
 from flask import Flask, request, jsonify, send_from_directory
 import csv
 import os
+import requests
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    print(f"KmA DTM backend draait op poort {port}")
-    app.run(host="0.0.0.0", port=port)
+app = Flask(__name__)
 
+# ---------------------------------------------------------
+# CONFIG
+# ---------------------------------------------------------
 
-DTM_FILE = "dtm_pc4.csv"   # jouw bestand
+DTM_URL = "https://www.kilometerafstanden.nl/dtm-reistijdenkaart/dtm_pc4.csv"
+DTM_FILE = "dtm_pc4.csv"
 
 # datastructuur { pc4_from: { pc4_to: {time_min, distance_km} } }
 dtm = {}
+
+
+# ---------------------------------------------------------
+# DATA LADEN
+# ---------------------------------------------------------
+
+def download_dtm():
+    if not os.path.exists(DTM_FILE):
+        print("DTM CSV downloaden...")
+        r = requests.get(DTM_URL, stream=True)
+        r.raise_for_status()
+        with open(DTM_FILE, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
 
 
 def load_dtm(path):
@@ -19,7 +35,6 @@ def load_dtm(path):
     dtm.clear()
 
     with open(path, newline='', encoding='utf-8-sig') as f:
-        # delimiter automatisch detecteren: ; of ,
         first_line = f.readline()
         delimiter = ";" if ";" in first_line else ","
         f.seek(0)
@@ -38,40 +53,37 @@ def load_dtm(path):
                 distance_km = round(distance_m / 1000.0, 3)
 
             except Exception as e:
-                print("Rij overgeslagen:", row, e)
+                print("Rij overgeslagen:", e)
                 continue
 
-            # -------------------------
-            # A → B opslaan
-            # -------------------------
             if A not in dtm:
                 dtm[A] = {}
+            if B not in dtm:
+                dtm[B] = {}
+
             dtm[A][B] = {
                 "time_min": time_min,
                 "distance_km": distance_km
             }
-
-            # -------------------------
-            # B → A automatisch toevoegen (symmetrisch maken)
-            # -------------------------
-            if B not in dtm:
-                dtm[B] = {}
             dtm[B][A] = {
                 "time_min": time_min,
                 "distance_km": distance_km
             }
 
 
-# laad de data bij start
+# ---------------------------------------------------------
+# DATA INITIALISATIE
+# ---------------------------------------------------------
+
+download_dtm()
 load_dtm(DTM_FILE)
-print("Aantal origins geladen:", len(dtm.keys()))
-
-app = Flask(__name__)
+print("Aantal origins geladen:", len(dtm))
 
 
 # ---------------------------------------------------------
-#  CORRECT EN COMPLEET: get_dtm() functie
+# API ENDPOINTS
 # ---------------------------------------------------------
+
 @app.route("/dtm")
 def get_dtm():
     origin = request.args.get("origin")
@@ -100,9 +112,10 @@ def get_dtm():
     })
 
 
-# ---------------------------------------------------------
-#  FRONTEND & GEOFILES
-# ---------------------------------------------------------
+@app.route("/origins")
+def get_origins():
+    return jsonify({"origins": sorted(dtm.keys())})
+
 
 @app.route("/")
 def home():
@@ -110,22 +123,7 @@ def home():
     return send_from_directory(static_path, "index.html")
 
 
-@app.route("/origins")
-def get_origins():
-    origins = sorted(list(dtm.keys()))
-    return jsonify({"origins": origins})
-
-
 @app.route("/pc4")
 def pc4_geo():
     static_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
     return send_from_directory(static_path, "pc4_gebieden.geojson")
-
-
-# ---------------------------------------------------------
-#  SERVER STARTEN
-# ---------------------------------------------------------
-if __name__ == "__main__":
-    print("KmA DTM backend draait op http://localhost:8000")
-    app.run(host="0.0.0.0", port=8000)
-
