@@ -15,25 +15,45 @@
 </head>
 
 <body>
-
+<!-- LEGENDA -->
+<div id="legend" style="
+  position:absolute;
+  bottom:20px;
+  right:20px;
+  background:white;
+  padding:10px;
+  border-radius:6px;
+  box-shadow:0 0 10px rgba(0,0,0,0.3);
+  font-size:14px;
+  line-height:1.4;
+  z-index:9999;
+">
 <h2>DTM ReistijdenKaart | Drive Time Matrix | DEMO</h2>
 
 <select id="originSelect">
   <option value="">Kies een PC4 postcodegebied...</option>
 </select>
 
-<label style="margin-left:12px;">Selectie reistijd (min):</label>
+<label>Kies reistijd (min): </label>
 <input id="iso_min" type="range" min="5" max="60" value="20" step="5" oninput="updateIsoLabel(this.value)">
 <span id="iso_value">20</span> min
+<button style="margin-left:12px;" onclick="showIsochrone()">▶️ Toon Afstanden en Reistijden</button>
 
-<button style="margin-left:12px;" onclick="showIsochrone()">▶️ Toon selectie</button>
-<button style="margin-left:40px;" onclick="resetMap()">🔄 Reset</button>
-<button style="margin-left:40px;" onclick="downloadCSV()">⬇️ DEMO CSV</button>
+<button style="margin-left:100px;" onclick="resetMap()">🔄 Reset DTM ReistijdenKaart</button>
+
+<button style="margin-right:10px;" onclick="downloadCSV()">⬇️ DEMO download selectie (CSV))</button>
+
+<button
+  style="margin-left:100px; background-color:#ccffcc; padding:8px 14px; border:1px solid #99dd99; border-radius:4px;"
+  onclick="window.open('https://www.kilometerafstanden.nl/drive-time-matrix.htm', '_blank')">
+  ℹ️ Informatie over deze DriveTimeMatrix (DTM)
+</button>
 
 <div id="status"></div>
 <div id="map"></div>
 
 <script>
+console.log("LOCAL VERSION TEST 2025-12-12");
 /* ------------------------------------------------------------
    HULPFUNCTIE
 ------------------------------------------------------------ */
@@ -82,7 +102,7 @@ fetch("/pc4")
         fillOpacity: 0.2
       },
       onEachFeature: (feature, layer) => {
-        const pc4 = norm(String(feature.properties.Name));
+        const pc4 = String(feature.properties.Name).padStart(4, "0");
 
         layer.on("mouseover", () => {
           layer.setStyle({ weight: 2, color: "black" });
