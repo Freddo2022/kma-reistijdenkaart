@@ -85,33 +85,6 @@ print("Aantal PC4 origins geladen:", len(dtm))
 
 
 # ---------------------------------------------------------
-# HELPER VOOR WOOCOMMERCE
-# ---------------------------------------------------------
-
-def get_dtm_for_pc4(pc4):
-    """
-    Geeft reistijd en afstand terug vanaf een vaste vestiging
-    (DEFAULT_ORIGIN_PC4) naar pc4.
-    """
-
-    pc4 = pc4.strip().zfill(4)
-
-    if DEFAULT_ORIGIN_PC4 not in dtm:
-        raise ValueError(f"Origin {DEFAULT_ORIGIN_PC4} niet gevonden in DTM")
-
-    if pc4 not in dtm[DEFAULT_ORIGIN_PC4]:
-        raise ValueError(f"PC4 {pc4} niet gevonden in DTM")
-
-    values = dtm[DEFAULT_ORIGIN_PC4][pc4]
-
-    return {
-        "reistijd_min": values["time_min"],
-        "afstand_km": values["distance_km"],
-        "location_id": DEFAULT_ORIGIN_PC4
-    }
-
-
-# ---------------------------------------------------------
 # API ENDPOINTS
 # ---------------------------------------------------------
 
