@@ -12,8 +12,12 @@ app = Flask(__name__)
 DTM_URL = "https://www.kilometerafstanden.nl/dtm-reistijdenkaart/dtm_pc4.csv"
 DTM_FILE = "dtm_pc4.csv"
 
-# datastructuur { pc4_from: { pc4_to: {time_min, distance_km} } }
+# datastructuur:
+# { pc4_from: { pc4_to: {time_min, distance_km} } }
 dtm = {}
+
+# vaste vestiging (voor WooCommerce)
+DEFAULT_ORIGIN_PC4 = "3521"   # <-- pas dit aan indien gewenst
 
 
 # ---------------------------------------------------------
@@ -34,7 +38,7 @@ def load_dtm(path):
     global dtm
     dtm.clear()
 
-    with open(path, newline='', encoding='utf-8-sig') as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         first_line = f.readline()
         delimiter = ";" if ";" in first_line else ","
         f.seek(0)
@@ -72,20 +76,68 @@ def load_dtm(path):
 
 
 # ---------------------------------------------------------
-# DATA INITIALISATIE
+# INITIALISATIE
 # ---------------------------------------------------------
 
 download_dtm()
 load_dtm(DTM_FILE)
-print("Aantal origins geladen:", len(dtm))
+print("Aantal PC4 origins geladen:", len(dtm))
+
+
+# ---------------------------------------------------------
+# HELPER VOOR WOOCOMMERCE
+# ---------------------------------------------------------
+
+def get_dtm_for_pc4(pc4):
+    """
+    Geeft reistijd en afstand terug vanaf een vaste vestiging
+    (DEFAULT_ORIGIN_PC4) naar pc4.
+    """
+
+    pc4 = pc4.strip().zfill(4)
+
+    if DEFAULT_ORIGIN_PC4 not in dtm:
+        raise ValueError(f"Origin {DEFAULT_ORIGIN_PC4} niet gevonden in DTM")
+
+    if pc4 not in dtm[DEFAULT_ORIGIN_PC4]:
+        raise ValueError(f"PC4 {pc4} niet gevonden in DTM")
+
+    values = dtm[DEFAULT_ORIGIN_PC4][pc4]
+
+    return {
+        "reistijd_min": values["time_min"],
+        "afstand_km": values["distance_km"],
+        "location_id": DEFAULT_ORIGIN_PC4
+    }
 
 
 # ---------------------------------------------------------
 # API ENDPOINTS
 # ---------------------------------------------------------
 
+@app.route("/api/v1/nearest-location")
+def nearest_location():
+    """
+    Endpoint speciaal voor WooCommerce
+    """
+    pc4 = request.args.get("pc4")
+
+    if not pc4:
+        return jsonify({"error": "pc4 parameter required"}), 400
+
+    try:
+        result = get_dtm_for_pc4(pc4)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+
+    return jsonify(result)
+
+
 @app.route("/dtm")
 def get_dtm():
+    """
+    Bestaande endpoint: volledige matrix vanaf één origin
+    """
     origin = request.args.get("origin")
 
     if not origin:
@@ -127,3 +179,8 @@ def home():
 def pc4_geo():
     static_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
     return send_from_directory(static_path, "pc4_gebieden.geojson")
+
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
