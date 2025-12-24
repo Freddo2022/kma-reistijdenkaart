@@ -124,8 +124,8 @@ def get_dtm():
     result = [
     {
         "dest_pc4": dest,
-        "time_min": round(values["time_min"]),
-        "distance_km": round(values["distance_km"])
+        "time_min": int(round(values["time_min"])),
+        "distance_km": int(round(values["distance_km"]))
     }
     for dest, values in dtm[origin].items()
 ]
