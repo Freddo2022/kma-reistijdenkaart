@@ -122,13 +122,13 @@ def get_dtm():
         return jsonify({"error": f"origin {origin} not found"}), 404
 
     result = [
-        {
-            "dest_pc4": dest,
-            "time_min": values["time_min"],
-            "distance_km": values["distance_km"]
-        }
-        for dest, values in dtm[origin].items()
-    ]
+    {
+        "dest_pc4": dest,
+        "time_min": round(values["time_min"]),
+        "distance_km": round(values["distance_km"])
+    }
+    for dest, values in dtm[origin].items()
+]
 
     return jsonify({
         "origin_pc4": origin,
