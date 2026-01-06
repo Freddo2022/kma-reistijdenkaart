@@ -79,7 +79,7 @@
 
 <button style="margin-left:80px;" onclick="resetMap()">🔄 Reset DTM ReistijdenKaart</button>
 
-<button style="margin-right:10px;" onclick="downloadCSV()">⬇️ DEMO download selectie (CSV))</button>
+<button style="margin-right:10px;" onclick="downloadCSV()">⬇️ Download selectie (CSV))</button>
 
 <button
   style="margin-left:70px; background-color:#ccffcc; padding:8px 14px; border:1px solid #99dd99; border-radius:4px;"
@@ -309,7 +309,7 @@ function updateIsoLabel(v) {
 }
 
 /* ------------------------------------------------------------
-   CSV DOWNLOAD (DEMO)
+   CSV DOWNLOAD
 ------------------------------------------------------------ */
 function downloadCSV() {
   if (!currentOrigin) return;
@@ -317,7 +317,13 @@ function downloadCSV() {
   const maxMin = parseFloat(document.getElementById("iso_min").value);
   let rows = lastResults.filter(r => r.time_min <= maxMin);
 
-  if (rows.length > 10) rows = rows.slice(0, 10);
+  // Klantversie: géén demo-limiet
+  // (voorheen: if (rows.length > 10) rows = rows.slice(0, 10);)
+
+  if (!rows.length) {
+    alert("Geen resultaten om te downloaden binnen de gekozen reistijd.");
+    return;
+  }
 
   let csv = "origin_pc4,dest_pc4,time_min,distance_km\n";
   rows.forEach(r => {
@@ -329,7 +335,7 @@ function downloadCSV() {
 
   const a = document.createElement("a");
   a.href = url;
-  a.download = `DTM_${currentOrigin}_${maxMin}min_DEMO.csv`;
+  a.download = `DTM_${currentOrigin}_${maxMin}min.csv`; // geen _DEMO meer
   a.click();
 
   URL.revokeObjectURL(url);
