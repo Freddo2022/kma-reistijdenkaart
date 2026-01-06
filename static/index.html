@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <title>DTM ReistijdenKaart</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    font-family: Arial, sans-serif;
+  }
+
+  #map {
+  width: calc(100% - 40px); /* ruimte links + rechts */
+  height: 90vh;
+  margin: 10px 20px 20px 20px; /* boven, rechts, onder, links */
+  border-radius: 6px;         /* optioneel: iets mooier */
+}
+
+  #status {
+    margin-top: 5px;
+    font-size: 13px;
+    color: #444;
+  }
+  
+  .top-bar {
+  padding: 20px 20px 10px 20px;
+  margin-bottom: 10px;
+}
+
+.top-bar h2 {
+  margin-top: 0;
+}
+
+  </style>
+</head>
+
+<body>
+<div id="legend" style="
+  position:absolute;
+  bottom:20px;
+  right:20px;
+  background:white;
+  padding:10px;
+  border-radius:6px;
+  box-shadow:0 0 10px rgba(0,0,0,0.3);
+  font-size:14px;
+  line-height:1.4;
+  z-index:9999;
+">
+
+<b>Reistijd (min)</b><br>
+<div><span style="background:#2c7bb6;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 0–10</div>
+<div><span style="background:#abd9e9;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 10–20</div>
+<div><span style="background:#ffffbf;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 20–30</div>
+<div><span style="background:#fdae61;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 30–45</div>
+<div><span style="background:#f46d43;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 45–60</div>
+<div><span style="background:#d7191c;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> > 60</div>
+</div>
+
+<div class="top-bar">
+<h2>DTM ReistijdenKaart | Drive Time Matrix | DEMO</h2>
+
+<select id="originSelect">
+  <option value="">Kies een PC4 postcodegebied...</option>
+</select>
+
+<label>Kies reistijd (min): </label>
+<input id="iso_min" type="range" min="5" max="60" value="20" step="5" oninput="updateIsoLabel(this.value)">
+<span id="iso_value">20</span> min
+<button style="margin-left:12px;" onclick="showIsochrone()">▶️ Toon Afstanden en Reistijden</button>
+
+<button style="margin-left:80px;" onclick="resetMap()">🔄 Reset DTM ReistijdenKaart</button>
+
+<button style="margin-right:10px;" onclick="downloadCSV()">⬇️ DEMO download selectie (CSV))</button>
+
+<button
+  style="margin-left:70px; background-color:#ccffcc; padding:8px 14px; border:1px solid #99dd99; border-radius:4px;"
+  onclick="window.open('https://www.kilometerafstanden.nl/drive-time-matrix.htm', '_blank')">
+  ℹ️ Informatie DriveTimeMatrix (DTM)
+</button>
+<button
+  style="margin-left:10px; background-color:#ccffcc; padding:8px 14px; border:1px solid #99dd99; border-radius:4px;"
+  onclick="window.open('https://www.kilometerafstanden.nl/dtm-api-drivetimematrix-reistijd-afstand.htm', '_blank')">
+  ℹ️ Informatie API DTM
+</button>
+  
+</div> <!-- einde top-bar -->
+<div id="status"></div>
+<div id="map"></div>
+
+<script>
+console.log("LOCAL VERSION TEST 2025-12-12");
+/* ------------------------------------------------------------
+   HULPFUNCTIE
+------------------------------------------------------------ */
+function norm(pc4) {
+  return String(pc4).padStart(4, "0");
+}
+
+/* ------------------------------------------------------------
+   MAP BASIS
+------------------------------------------------------------ */
+const map = L.map("map").setView([52.1, 5.3], 8);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 14,
+  attribution: "&copy; OpenStreetMap"
+}).addTo(map);
+
+map.createPane("pc4pane");
+map.getPane("pc4pane").style.zIndex = 400;
+
+map.createPane("isochronepane");
+map.getPane("isochronepane").style.zIndex = 300;
+
+let pc4Layer = null;
+let isochroneLayer = null;
+
+let currentOrigin = null;
+let currentTimes = {};
+let currentDistances = {};
+let lastResults = [];
+
+const statusEl = document.getElementById("status");
+
+/* ------------------------------------------------------------
+   PC4 GEOJSON LADEN
+------------------------------------------------------------ */
+fetch("/pc4")
+  .then(r => r.json())
+  .then(geojson => {
+
+    pc4Layer = L.geoJSON(geojson, {
+      pane: "pc4pane",
+      style: {
+        color: "#555",
+        weight: 0.5,
+        fillOpacity: 0.2
+      },
+      onEachFeature: (feature, layer) => {
+        const pc4 = String(feature.properties.Name).padStart(4, "0");
+
+        layer.on("mouseover", () => {
+          layer.setStyle({ weight: 2, color: "black" });
+          if (currentOrigin) showPopup(layer, pc4);
+        });
+
+        layer.on("mouseout", () => {
+          layer.setStyle({ weight: 0.5, color: "#555" });
+          layer.closePopup();
+        });
+
+        layer.on("click", () => {
+          if (currentOrigin) showPopup(layer, pc4);
+        });
+      }
+    }).addTo(map);
+
+   
+});
+
+/* ------------------------------------------------------------
+   POPUP
+------------------------------------------------------------ */
+function showPopup(layer, pc4) {
+  const t = currentTimes[pc4];
+  const d = currentDistances[pc4];
+
+  let html = `<b>PC4 ${pc4}</b><br>`;
+  if (t != null) {
+    html += `Reistijd: ${t.toFixed(1)} min<br>`;
+    html += `Afstand: ${d.toFixed(2)} km`;
+  } else {
+    html += `<i>Geen DTM-gegevens</i>`;
+  }
+  layer.bindPopup(html).openPopup();
+}
+
+/* ------------------------------------------------------------
+   ORIGINS DROPDOWN
+------------------------------------------------------------ */
+fetch("/origins")
+  .then(r => r.json())
+  .then(data => {
+    const sel = document.getElementById("originSelect");
+    data.origins.forEach(pc4 => {
+      const opt = document.createElement("option");
+      opt.value = norm(pc4);
+      opt.textContent = norm(pc4);
+      sel.appendChild(opt);
+    });
+  });
+
+/* ------------------------------------------------------------
+   KLEURFUNCTIE
+------------------------------------------------------------ */
+function getColor(t) {
+  if (t == null) return "#cccccc";
+  if (t <= 10) return "#2c7bb6";
+  if (t <= 20) return "#abd9e9";
+  if (t <= 30) return "#ffffbf";
+  if (t <= 45) return "#fdae61";
+  if (t <= 60) return "#f46d43";
+  return "#d7191c";
+}
+
+/* ------------------------------------------------------------
+   CHOROPLETH UPDATE
+------------------------------------------------------------ */
+function updateChoropleth() {
+  if (!pc4Layer) return;
+
+  pc4Layer.setStyle(f => {
+    const pc4 = norm(f.properties.Name);
+    const t = currentTimes[pc4];
+    return {
+      color: "#555",
+      weight: 0.5,
+      fillOpacity: t != null ? 0.7 : 0.1,
+      fillColor: getColor(t)
+    };
+  });
+}
+
+/* ------------------------------------------------------------
+   ORIGIN SELECT
+------------------------------------------------------------ */
+document.getElementById("originSelect").addEventListener("change", () => {
+
+  const origin = norm(document.getElementById("originSelect").value);
+  if (!origin) return;
+
+  currentOrigin = origin;
+  statusEl.textContent = "DTM laden voor " + origin + "...";
+
+  fetch("/dtm?origin=" + origin)
+    .then(r => r.json())
+    .then(data => {
+
+      lastResults = data.results;
+      currentTimes = {};
+      currentDistances = {};
+
+      data.results.forEach(r => {
+        const pc4 = norm(r.dest_pc4);
+        currentTimes[pc4] = r.time_min;
+        currentDistances[pc4] = r.distance_km;
+      });
+
+      statusEl.textContent =
+        `DTM geladen voor ${origin} (${data.results.length} bestemmingen)`;
+
+      updateChoropleth();
+    });
+});
+
+/* ------------------------------------------------------------
+   ISOCHRONE
+------------------------------------------------------------ */
+function showIsochrone() {
+  if (!currentOrigin) return;
+
+  const maxMin = parseFloat(document.getElementById("iso_min").value);
+
+  if (isochroneLayer) map.removeLayer(isochroneLayer);
+
+  const within = lastResults
+    .filter(r => r.time_min <= maxMin)
+    .map(r => norm(r.dest_pc4));
+
+  isochroneLayer = L.geoJSON(pc4Layer.toGeoJSON(), {
+    pane: "isochronepane",
+    filter: f => within.includes(norm(f.properties.Name)),
+    style: {
+      color: "purple",
+      fillColor: "purple",
+      fillOpacity: 0.3,
+      weight: 1
+    },
+    interactive: false
+  }).addTo(map);
+}
+
+/* ------------------------------------------------------------
+   RESET
+------------------------------------------------------------ */
+function resetMap() {
+  if (isochroneLayer) map.removeLayer(isochroneLayer);
+  currentTimes = {};
+  currentDistances = {};
+  currentOrigin = null;
+  updateChoropleth();
+  statusEl.textContent = "Kaart gereset.";
+}
+
+/* ------------------------------------------------------------
+   SLIDER LABEL
+------------------------------------------------------------ */
+function updateIsoLabel(v) {
+  document.getElementById("iso_value").textContent = v;
+}
+
+/* ------------------------------------------------------------
+   CSV DOWNLOAD (DEMO)
+------------------------------------------------------------ */
+function downloadCSV() {
+  if (!currentOrigin) return;
+
+  const maxMin = parseFloat(document.getElementById("iso_min").value);
+  let rows = lastResults.filter(r => r.time_min <= maxMin);
+
+  if (rows.length > 10) rows = rows.slice(0, 10);
+
+  let csv = "origin_pc4,dest_pc4,time_min,distance_km\n";
+  rows.forEach(r => {
+    csv += `${currentOrigin},${norm(r.dest_pc4)},${r.time_min},${r.distance_km}\n`;
+  });
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `DTM_${currentOrigin}_${maxMin}min_DEMO.csv`;
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+</script>
+
+</body>
+</html>

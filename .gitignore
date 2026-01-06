@@ -1,0 +1,5 @@
+dtm_pc4.csv
+*.csv
+__pycache__/
+*.pyc
+.env
