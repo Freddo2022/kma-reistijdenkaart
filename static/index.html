@@ -8,37 +8,28 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-  html, body {
-    height: 100%;
-    margin: 0;
-  }
+    html, body { height: 100%; margin: 0; }
+    body { font-family: Arial, sans-serif; }
 
-  body {
-    font-family: Arial, sans-serif;
-  }
+    #map {
+      width: calc(100% - 40px);
+      height: 90vh;
+      margin: 10px 20px 20px 20px;
+      border-radius: 6px;
+    }
 
-  #map {
-  width: calc(100% - 40px); /* ruimte links + rechts */
-  height: 90vh;
-  margin: 10px 20px 20px 20px; /* boven, rechts, onder, links */
-  border-radius: 6px;         /* optioneel: iets mooier */
-}
+    #status {
+      margin-top: 5px;
+      font-size: 13px;
+      color: #444;
+    }
 
-  #status {
-    margin-top: 5px;
-    font-size: 13px;
-    color: #444;
-  }
-  
-  .top-bar {
-  padding: 20px 20px 10px 20px;
-  margin-bottom: 10px;
-}
+    .top-bar {
+      padding: 20px 20px 10px 20px;
+      margin-bottom: 10px;
+    }
 
-.top-bar h2 {
-  margin-top: 0;
-}
-
+    .top-bar h2 { margin-top: 0; }
   </style>
 </head>
 
@@ -55,49 +46,60 @@
   line-height:1.4;
   z-index:9999;
 ">
-
-<b>Reistijd (min)</b><br>
-<div><span style="background:#2c7bb6;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 0–10</div>
-<div><span style="background:#abd9e9;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 10–20</div>
-<div><span style="background:#ffffbf;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 20–30</div>
-<div><span style="background:#fdae61;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 30–45</div>
-<div><span style="background:#f46d43;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 45–60</div>
-<div><span style="background:#d7191c;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> > 60</div>
+  <b>Reistijd (min)</b><br>
+  <div><span style="background:#2c7bb6;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 0–10</div>
+  <div><span style="background:#abd9e9;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 10–20</div>
+  <div><span style="background:#ffffbf;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 20–30</div>
+  <div><span style="background:#fdae61;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 30–45</div>
+  <div><span style="background:#f46d43;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> 45–60</div>
+  <div><span style="background:#d7191c;width:20px;height:12px;display:inline-block;margin-right:5px;"></span> > 60</div>
 </div>
 
 <div class="top-bar">
-<h2>ReistijdenKaart | DriveTimeMatrix (DTM-4PC)</h2>
+  <h2>ReistijdenKaart | DriveTimeMatrix (DTM-4PC)</h2>
 
-<select id="originSelect">
-  <option value="">Kies een PC4 postcodegebied...</option>
-</select>
+  <select id="originSelect">
+    <option value="">Kies een PC4 postcodegebied...</option>
+  </select>
 
-<label>Kies reistijd (min): </label>
-<input id="iso_min" type="range" min="5" max="60" value="20" step="5" oninput="updateIsoLabel(this.value)">
-<span id="iso_value">20</span> min
-<button style="margin-left:12px;" onclick="showIsochrone()">▶️ Toon Afstanden en Reistijden</button>
+  <label>Kies reistijd (min): </label>
+  <input id="iso_min" type="range" min="5" max="60" value="20" step="5" oninput="updateIsoLabel(this.value)">
+  <span id="iso_value">20</span> min
+  <button style="margin-left:12px;" onclick="showIsochrone()">▶️ Toon Afstanden en Reistijden</button>
 
-<button style="margin-left:80px;" onclick="resetMap()">🔄 Reset DTM ReistijdenKaart</button>
+  <button style="margin-left:80px;" onclick="resetMap()">🔄 Reset DTM ReistijdenKaart</button>
 
-<button style="margin-right:10px;" onclick="downloadCSV()">⬇️ Download selectie (CSV))</button>
+  <button style="margin-right:10px;" onclick="downloadCSV()">⬇️ Download selectie (CSV))</button>
 
-<button
-  style="margin-left:70px; background-color:#ccffcc; padding:8px 14px; border:1px solid #99dd99; border-radius:4px;"
-  onclick="window.open('https://www.kilometerafstanden.nl/drive-time-matrix.htm', '_blank')">
-  ℹ️ Informatie DriveTimeMatrix (DTM)
-</button>
-<button
-  style="margin-left:10px; background-color:#ccffcc; padding:8px 14px; border:1px solid #99dd99; border-radius:4px;"
-  onclick="window.open('https://www.kilometerafstanden.nl/dtm-api-drivetimematrix-reistijd-afstand.htm', '_blank')">
-  ℹ️ Informatie API DTM
-</button>
-  
-</div> <!-- einde top-bar -->
+  <button
+    style="margin-left:70px; background-color:#ccffcc; padding:8px 14px; border:1px solid #99dd99; border-radius:4px;"
+    onclick="window.open('https://www.kilometerafstanden.nl/drive-time-matrix.htm', '_blank')">
+    ℹ️ Informatie DriveTimeMatrix (DTM)
+  </button>
+
+  <button
+    style="margin-left:10px; background-color:#ccffcc; padding:8px 14px; border:1px solid #99dd99; border-radius:4px;"
+    onclick="window.open('https://www.kilometerafstanden.nl/dtm-api-drivetimematrix-reistijd-afstand.htm', '_blank')">
+    ℹ️ Informatie API DTM
+  </button>
+</div>
+
 <div id="status"></div>
 <div id="map"></div>
 
 <script>
 console.log("LOCAL VERSION TEST 2025-12-12");
+
+/* ------------------------------------------------------------
+   FIX 1: API KEY + v1 endpoints
+------------------------------------------------------------ */
+const API_KEY = "Klant-Demo_290361"; // LET OP: alleen voor demo/test; voor echte klanten niet in frontend zetten
+
+function apiUrl(pathAndQuery) {
+  const sep = pathAndQuery.includes("?") ? "&" : "?";
+  return `${pathAndQuery}${sep}key=${encodeURIComponent(API_KEY)}`;
+}
+
 /* ------------------------------------------------------------
    HULPFUNCTIE
 ------------------------------------------------------------ */
@@ -164,7 +166,6 @@ fetch("/pc4")
       }
     }).addTo(map);
 
-   
 });
 
 /* ------------------------------------------------------------
@@ -176,8 +177,8 @@ function showPopup(layer, pc4) {
 
   let html = `<b>PC4 ${pc4}</b><br>`;
   if (t != null) {
-    html += `Reistijd: ${t.toFixed(1)} min<br>`;
-    html += `Afstand: ${d.toFixed(2)} km`;
+    html += `Reistijd: ${Number(t).toFixed(1)} min<br>`;
+    html += `Afstand: ${Number(d).toFixed(2)} km`;
   } else {
     html += `<i>Geen DTM-gegevens</i>`;
   }
@@ -185,18 +186,22 @@ function showPopup(layer, pc4) {
 }
 
 /* ------------------------------------------------------------
-   ORIGINS DROPDOWN
+   ORIGINS DROPDOWN (nu via /api/v1/origins + key)
 ------------------------------------------------------------ */
-fetch("/origins")
+fetch(apiUrl("/api/v1/origins"))
   .then(r => r.json())
   .then(data => {
     const sel = document.getElementById("originSelect");
-    data.origins.forEach(pc4 => {
+    (data.origins || []).forEach(pc4 => {
       const opt = document.createElement("option");
       opt.value = norm(pc4);
       opt.textContent = norm(pc4);
       sel.appendChild(opt);
     });
+  })
+  .catch(err => {
+    console.error("Origins laden mislukt:", err);
+    statusEl.textContent = "Origins laden mislukt (controleer API key / endpoint).";
   });
 
 /* ------------------------------------------------------------
@@ -231,7 +236,7 @@ function updateChoropleth() {
 }
 
 /* ------------------------------------------------------------
-   ORIGIN SELECT
+   ORIGIN SELECT (nu via /api/v1/dtm + key)
 ------------------------------------------------------------ */
 document.getElementById("originSelect").addEventListener("change", () => {
 
@@ -241,9 +246,15 @@ document.getElementById("originSelect").addEventListener("change", () => {
   currentOrigin = origin;
   statusEl.textContent = "DTM laden voor " + origin + "...";
 
-  fetch("/dtm?origin=" + origin)
+  fetch(apiUrl(`/api/v1/dtm?origin=${origin}`))
     .then(r => r.json())
     .then(data => {
+
+      if (!data || !Array.isArray(data.results)) {
+        console.error("Onverwachte response:", data);
+        statusEl.textContent = "DTM laden mislukt (onverwachte response).";
+        return;
+      }
 
       lastResults = data.results;
       currentTimes = {};
@@ -259,6 +270,10 @@ document.getElementById("originSelect").addEventListener("change", () => {
         `DTM geladen voor ${origin} (${data.results.length} bestemmingen)`;
 
       updateChoropleth();
+    })
+    .catch(err => {
+      console.error("DTM laden mislukt:", err);
+      statusEl.textContent = "DTM laden mislukt (controleer API key / endpoint).";
     });
 });
 
@@ -317,9 +332,6 @@ function downloadCSV() {
   const maxMin = parseFloat(document.getElementById("iso_min").value);
   let rows = lastResults.filter(r => r.time_min <= maxMin);
 
-  // Klantversie: géén demo-limiet
-  // (voorheen: if (rows.length > 10) rows = rows.slice(0, 10);)
-
   if (!rows.length) {
     alert("Geen resultaten om te downloaden binnen de gekozen reistijd.");
     return;
@@ -335,7 +347,7 @@ function downloadCSV() {
 
   const a = document.createElement("a");
   a.href = url;
-  a.download = `DTM_${currentOrigin}_${maxMin}min.csv`; // geen _DEMO meer
+  a.download = `DTM_${currentOrigin}_${maxMin}min.csv`;
   a.click();
 
   URL.revokeObjectURL(url);
