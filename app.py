@@ -126,7 +126,7 @@ print("Aantal PC4 origins geladen:", len(dtm))
 
 CLIENTS = {
     "demo_290361": {
-        "plan": "DEMO VERSIE",
+        "plan": "demo",
         "title": "DTM ReistijdenKaart",
         "csv_max_rows": 50
     },
