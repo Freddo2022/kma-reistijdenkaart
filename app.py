@@ -249,6 +249,13 @@ def get_origins():
 
 @app.route("/")
 def home():
+    # key verplicht voor de kaart-UI
+    key = (request.args.get("key") or "").strip()
+
+    # VALID_KEYS moet bestaan (uit je API auth code)
+    if not key or key not in VALID_KEYS:
+        return jsonify({"error": "access denied (missing/invalid key)"}), 403
+
     static_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
     return send_from_directory(static_path, "index.html")
 
