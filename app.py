@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory, abort, make_response
+from flask import Flask, request, jsonify, send_from_directory, make_response
 import csv
 import os
 import requests
@@ -14,9 +14,7 @@ app = Flask(__name__)
 DTM_URL = "https://www.kilometerafstanden.nl/dtm-reistijdenkaart/dtm_pc4.csv"
 DTM_FILE = "dtm_pc4.csv"
 
-# datastructuur:
-# { pc4_from: { pc4_to: {time_min, distance_km} } }
-dtm = {}
+dtm = {}  # { pc4_from: { pc4_to: {time_min, distance_km} } }
 
 DEFAULT_ORIGIN_PC4 = "3521"   # (optioneel)
 
@@ -31,12 +29,23 @@ RATE_LIMIT_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_MIN", "60"))
 _rl_window = {}  # {key: (minute, count)}
 
 def get_api_key():
+    """
+    Oplossing 1:
+    - Mooie URL param: ?t=<token>
+    - Backward compatible: ?key=<key>
+    - Header blijft werken: Authorization: Bearer <key>
+    """
     # 1) Header: Authorization: Bearer <key>
     auth = request.headers.get("Authorization", "")
     if auth.lower().startswith("bearer "):
         return auth.split(" ", 1)[1].strip()
 
-    # 2) Query param: ?key=<key>
+    # 2) Query param: ?t=<token>  (nieuw)
+    token = (request.args.get("t") or "").strip()
+    if token:
+        return token
+
+    # 3) Query param: ?key=<key> (oude links blijven werken)
     return (request.args.get("key") or "").strip()
 
 def rate_limit_ok(key: str) -> bool:
@@ -195,7 +204,6 @@ def api_v1_route():
 def api_v1_origins():
     return jsonify({"origins": sorted(dtm.keys())})
 
-# ✅ Veilig gemaakt: kan niet meer crashen door ontbrekende functie
 @app.route("/api/v1/nearest-location")
 @require_api_key
 def nearest_location():
@@ -231,20 +239,20 @@ def get_origins():
     return jsonify({"origins": sorted(dtm.keys())})
 
 # ---------------------------------------------------------
-# UI: kaart alleen met key (HTML i.p.v. JSON bij fout)
+# UI: kaart alleen met token (HTML i.p.v. JSON bij fout)
 # ---------------------------------------------------------
 
 @app.route("/")
 def home():
-    key = (request.args.get("key") or "").strip()
+    token = get_api_key()
 
-    if not key or key not in VALID_KEYS:
+    if not token or token not in VALID_KEYS:
         html = (
             "<!doctype html><html><head><meta charset='utf-8'>"
             "<title>Toegang vereist</title></head><body style='font-family:Arial;padding:40px'>"
             "<h2>🔒 Toegang vereist</h2>"
-            "<p>Deze kaart is alleen toegankelijk met een geldige API-sleutel.</p>"
-            "<p>Gebruik: <code>/?key=JOUW_SLEUTEL</code></p>"
+            "<p>Deze kaart is alleen toegankelijk met een geldige toegangstoken.</p>"
+            "<p>Gebruik: <code>/?t=JOUW_TOKEN</code></p>"
             "</body></html>"
         )
         return make_response(html, 403)
@@ -252,13 +260,12 @@ def home():
     static_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
     return send_from_directory(static_path, "index.html")
 
-# (optioneel) Als je static bestanden direct serveert via /static/...,
-# kun je die hier ook afschermen. Alleen nodig als je ze daadwerkelijk expose't.
 @app.route("/static/<path:filename>")
 def static_files(filename):
-    key = (request.args.get("key") or "").strip()
-    if not key or key not in VALID_KEYS:
+    token = get_api_key()
+    if not token or token not in VALID_KEYS:
         return make_response("Access denied", 403)
+
     static_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
     return send_from_directory(static_path, filename)
 
