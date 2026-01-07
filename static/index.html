@@ -88,6 +88,20 @@
 <div id="map"></div>
 
 <script>
+fetch(apiUrl("/api/v1/me"))
+  .then(r => r.json())
+  .then(cfg => {
+    if (cfg.title) {
+      document.title = cfg.title;
+      const h2 = document.querySelector(".top-bar h2");
+      if (h2) h2.textContent = cfg.title;
+    }
+
+    if (cfg.plan === "demo") {
+      document.body.classList.add("demo");
+    }
+  });
+  
 console.log("LOCAL VERSION TEST 2025-12-12");
 
 // ------------------------------------------------------------
