@@ -140,6 +140,28 @@ print("Aantal PC4 origins geladen:", len(dtm))
 # API ENDPOINTS
 # ---------------------------------------------------------
 
+CLIENTS = {
+    "Klant-Demo_290361": {
+        "plan": "demo",
+        "title": "DTM ReistijdenKaart – DEMO",
+        "csv_max_rows": 50
+    },
+    "Klant-Pro_123456": {
+        "plan": "pro",
+        "title": "DTM ReistijdenKaart",
+        "csv_max_rows": None
+    }
+}
+
+@app.route("/api/v1/me")
+@require_api_key
+def me():
+    key = request.api_key
+    cfg = CLIENTS.get(key, {"plan": "pro", "title": "DTM ReistijdenKaart"})
+    return jsonify(cfg)
+
+
+
 @app.route("/api/v1/dtm")
 @require_api_key
 def api_v1_dtm():
