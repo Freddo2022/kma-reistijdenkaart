@@ -141,12 +141,12 @@ print("Aantal PC4 origins geladen:", len(dtm))
 # ---------------------------------------------------------
 
 CLIENTS = {
-    "Klant-Demo_290361": {
+    "demo_290361": {
         "plan": "demo",
-        "title": "DTM ReistijdenKaart – DEMO",
+        "title": "DTM ReistijdenKaart – DEMO VERSIE",
         "csv_max_rows": 50
     },
-    "Klant-Pro_123456": {
+    "medialane_070126": {
         "plan": "pro",
         "title": "DTM ReistijdenKaart",
         "csv_max_rows": None
