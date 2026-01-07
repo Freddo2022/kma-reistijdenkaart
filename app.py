@@ -199,4 +199,74 @@ def api_v1_origins():
 @app.route("/api/v1/nearest-location")
 @require_api_key
 def nearest_location():
-    return jsonify({"error": "ne
+    return jsonify({"error": "nearest-location not implemented"}), 501
+
+# ---------------------------------------------------------
+# LEGACY ENDPOINTS (optioneel laten staan)
+# ---------------------------------------------------------
+
+@app.route("/dtm")
+def get_dtm():
+    origin = request.args.get("origin")
+    if not origin:
+        return jsonify({"error": "origin parameter required"}), 400
+
+    origin = origin.strip().zfill(4)
+    if origin not in dtm:
+        return jsonify({"error": f"origin {origin} not found"}), 404
+
+    result = [
+        {
+            "dest_pc4": dest,
+            "time_min": int(round(values["time_min"])),
+            "distance_km": int(round(values["distance_km"]))
+        }
+        for dest, values in dtm[origin].items()
+    ]
+
+    return jsonify({"origin_pc4": origin, "count": len(result), "results": result})
+
+@app.route("/origins")
+def get_origins():
+    return jsonify({"origins": sorted(dtm.keys())})
+
+# ---------------------------------------------------------
+# UI: kaart alleen met key (HTML i.p.v. JSON bij fout)
+# ---------------------------------------------------------
+
+@app.route("/")
+def home():
+    key = (request.args.get("key") or "").strip()
+
+    if not key or key not in VALID_KEYS:
+        html = (
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<title>Toegang vereist</title></head><body style='font-family:Arial;padding:40px'>"
+            "<h2>🔒 Toegang vereist</h2>"
+            "<p>Deze kaart is alleen toegankelijk met een geldige API-sleutel.</p>"
+            "<p>Gebruik: <code>/?key=JOUW_SLEUTEL</code></p>"
+            "</body></html>"
+        )
+        return make_response(html, 403)
+
+    static_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    return send_from_directory(static_path, "index.html")
+
+# (optioneel) Als je static bestanden direct serveert via /static/...,
+# kun je die hier ook afschermen. Alleen nodig als je ze daadwerkelijk expose't.
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    key = (request.args.get("key") or "").strip()
+    if not key or key not in VALID_KEYS:
+        return make_response("Access denied", 403)
+    static_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    return send_from_directory(static_path, filename)
+
+@app.route("/pc4")
+def pc4_geo():
+    static_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    return send_from_directory(static_path, "pc4_gebieden.geojson")
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
