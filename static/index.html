@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -90,10 +91,22 @@
 <script>
 console.log("LOCAL VERSION TEST 2025-12-12");
 
-/* ------------------------------------------------------------
-   FIX 1: API KEY + v1 endpoints
------------------------------------------------------------- */
-const API_KEY = "Klant-Demo_290361"; // LET OP: alleen voor demo/test; voor echte klanten niet in frontend zetten
+// ------------------------------------------------------------
+// OPLOSSING 1: API KEY UIT URL + alle calls via /api/v1 + key
+// ------------------------------------------------------------
+const params = new URLSearchParams(window.location.search);
+const API_KEY = params.get("key");
+
+if (!API_KEY) {
+  document.body.innerHTML = `
+    <div style="padding:40px;font-family:Arial">
+      <h2>🔒 Toegang vereist</h2>
+      <p>Deze reistijdenkaart is alleen toegankelijk met een geldige API-sleutel.</p>
+      <p>Gebruik bijvoorbeeld: <code>/?key=JOUW_SLEUTEL</code></p>
+    </div>
+  `;
+  throw new Error("Geen API key in URL");
+}
 
 function apiUrl(pathAndQuery) {
   const sep = pathAndQuery.includes("?") ? "&" : "?";
@@ -134,7 +147,7 @@ let lastResults = [];
 const statusEl = document.getElementById("status");
 
 /* ------------------------------------------------------------
-   PC4 GEOJSON LADEN
+   PC4 GEOJSON LADEN (blijft publiek: /pc4)
 ------------------------------------------------------------ */
 fetch("/pc4")
   .then(r => r.json())
@@ -166,6 +179,10 @@ fetch("/pc4")
       }
     }).addTo(map);
 
+  })
+  .catch(err => {
+    console.error("PC4 laden mislukt:", err);
+    statusEl.textContent = "PC4-gebieden laden mislukt.";
   });
 
 /* ------------------------------------------------------------
@@ -186,7 +203,7 @@ function showPopup(layer, pc4) {
 }
 
 /* ------------------------------------------------------------
-   ORIGINS DROPDOWN (nu via /api/v1/origins + key)
+   ORIGINS DROPDOWN (via /api/v1/origins + key)
 ------------------------------------------------------------ */
 fetch(apiUrl("/api/v1/origins"))
   .then(r => r.json())
@@ -201,7 +218,7 @@ fetch(apiUrl("/api/v1/origins"))
   })
   .catch(err => {
     console.error("Origins laden mislukt:", err);
-    statusEl.textContent = "Origins laden mislukt (controleer API key / endpoint).";
+    statusEl.textContent = "Origins laden mislukt (controleer API key).";
   });
 
 /* ------------------------------------------------------------
@@ -236,7 +253,7 @@ function updateChoropleth() {
 }
 
 /* ------------------------------------------------------------
-   ORIGIN SELECT (nu via /api/v1/dtm + key)
+   ORIGIN SELECT (via /api/v1/dtm + key)
 ------------------------------------------------------------ */
 document.getElementById("originSelect").addEventListener("change", () => {
 
@@ -247,7 +264,13 @@ document.getElementById("originSelect").addEventListener("change", () => {
   statusEl.textContent = "DTM laden voor " + origin + "...";
 
   fetch(apiUrl(`/api/v1/dtm?origin=${origin}`))
-    .then(r => r.json())
+    .then(async r => {
+      if (!r.ok) {
+        const txt = await r.text();
+        throw new Error(`HTTP ${r.status}: ${txt}`);
+      }
+      return r.json();
+    })
     .then(data => {
 
       if (!data || !Array.isArray(data.results)) {
@@ -356,3 +379,4 @@ function downloadCSV() {
 
 </body>
 </html>
+```
