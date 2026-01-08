@@ -6,10 +6,10 @@ import time
 import sqlite3
 from functools import wraps
 from flask_compress import Compress
-Compress(app)
-
 
 app = Flask(__name__)
+
+Compress(app)
 
 # ---------------------------------------------------------
 # CONFIG
