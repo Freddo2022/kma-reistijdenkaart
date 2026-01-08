@@ -8,7 +8,6 @@ from functools import wraps
 from flask_compress import Compress
 
 app = Flask(__name__)
-
 Compress(app)
 
 # ---------------------------------------------------------
@@ -114,7 +113,7 @@ def build_sqlite_from_csv(csv_path: str, db_path: str):
         )
     """)
 
-    # Sneller importeren (oké omdat de DB read-only gebruikt wordt)
+    # Sneller importeren (oké omdat DB read-only gebruikt wordt)
     cur.execute("PRAGMA journal_mode = OFF;")
     cur.execute("PRAGMA synchronous = OFF;")
     cur.execute("PRAGMA temp_store = MEMORY;")
@@ -137,9 +136,7 @@ def build_sqlite_from_csv(csv_path: str, db_path: str):
                 distance_m = float(row["distance_m"])
 
                 time_min = int(round(duration_s / 60.0))
-
-                # compact: 0.1 km resolutie (100m) -> int
-                distance_dm = int(round(distance_m / 100.0))
+                distance_dm = int(round(distance_m / 100.0))  # 0.1 km
 
                 # CSV heeft alleen A->B, maar jij wil ook B->A:
                 batch.append((A, B, time_min, distance_dm))
@@ -164,6 +161,13 @@ def build_sqlite_from_csv(csv_path: str, db_path: str):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_from_time ON dtm(pc4_from, time_min)")
     conn.commit()
 
+    # Origins tabel (maakt dropdown supersnel, ook bij cold start)
+    cur.execute("DROP TABLE IF EXISTS origins")
+    cur.execute("CREATE TABLE origins (pc4 TEXT PRIMARY KEY)")
+    cur.execute("INSERT OR IGNORE INTO origins(pc4) SELECT DISTINCT pc4_from FROM dtm")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_origins_pc4 ON origins(pc4)")
+    conn.commit()
+
     # DB compacter maken
     cur.execute("VACUUM;")
     conn.close()
@@ -178,6 +182,12 @@ def get_db():
     if "db" not in g:
         g.db = sqlite3.connect(DTM_DB)
         g.db.row_factory = sqlite3.Row
+
+        # Read-only & performance pragmas
+        g.db.execute("PRAGMA query_only = ON;")
+        g.db.execute("PRAGMA temp_store = MEMORY;")
+        g.db.execute("PRAGMA cache_size = -20000;")    # ~20MB cache
+        g.db.execute("PRAGMA mmap_size = 268435456;")  # 256MB mmap (snellere reads)
     return g.db
 
 @app.teardown_appcontext
@@ -230,32 +240,26 @@ def api_v1_dtm():
         return jsonify({"error": "origin parameter required"}), 400
 
     origin = origin.zfill(4)
-
-    # Optioneel: kaart kan vaak met max_min werken (scheelt CPU/RAM/IO/JSON)
     max_min = request.args.get("max_min", type=int)
 
     db = get_db()
 
     if max_min is not None:
-        rows = db.execute("""
+        cur = db.execute("""
             SELECT pc4_to AS dest, time_min, distance_dm
             FROM dtm
             WHERE pc4_from = ? AND time_min <= ?
-            ORDER BY pc4_to
-        """, (origin, max_min)).fetchall()
+        """, (origin, max_min))
     else:
-        rows = db.execute("""
+        cur = db.execute("""
             SELECT pc4_to AS dest, time_min, distance_dm
             FROM dtm
             WHERE pc4_from = ?
-            ORDER BY pc4_to
-        """, (origin,)).fetchall()
+        """, (origin,))
 
-    # Compact terug: arrays i.p.v. list van dicts
-    dest = []
-    t = []
-    d = []
-    for r in rows:
+    # Compact terug: arrays, en we itereren (geen fetchall)
+    dest, t, d = [], [], []
+    for r in cur:
         dest.append(r["dest"])
         t.append(int(r["time_min"]))
         d.append(int(r["distance_dm"]))  # 0.1 km
@@ -292,8 +296,8 @@ def api_v1_route():
 @require_api_key
 def api_v1_origins():
     db = get_db()
-    rows = db.execute("SELECT DISTINCT pc4_from AS o FROM dtm ORDER BY o").fetchall()
-    return jsonify({"origins": [r["o"] for r in rows]})
+    rows = db.execute("SELECT pc4 FROM origins ORDER BY pc4").fetchall()
+    return jsonify({"origins": [r["pc4"] for r in rows]})
 
 @app.route("/api/v1/nearest-location")
 @require_api_key
@@ -301,7 +305,7 @@ def nearest_location():
     return jsonify({"error": "nearest-location not implemented"}), 501
 
 # ---------------------------------------------------------
-# LEGACY ENDPOINTS (blijven werken, maar nu uit SQLite)
+# LEGACY ENDPOINTS (optioneel)
 # ---------------------------------------------------------
 
 @app.route("/dtm")
@@ -311,45 +315,41 @@ def get_dtm():
         return jsonify({"error": "origin parameter required"}), 400
 
     origin = origin.strip().zfill(4)
-
     max_min = request.args.get("max_min", type=int)
+
     db = get_db()
 
     if max_min is not None:
-        rows = db.execute("""
+        cur = db.execute("""
             SELECT pc4_to AS dest, time_min, distance_dm
             FROM dtm
             WHERE pc4_from = ? AND time_min <= ?
-            ORDER BY pc4_to
-        """, (origin, max_min)).fetchall()
+        """, (origin, max_min))
     else:
-        rows = db.execute("""
+        cur = db.execute("""
             SELECT pc4_to AS dest, time_min, distance_dm
             FROM dtm
             WHERE pc4_from = ?
-            ORDER BY pc4_to
-        """, (origin,)).fetchall()
+        """, (origin,))
 
-    # Legacy: list van dicts (maar wel uit DB)
-    result = [
-        {
+    result = []
+    for r in cur:
+        result.append({
             "dest_pc4": r["dest"],
             "time_min": int(r["time_min"]),
             "distance_km": int(round(int(r["distance_dm"]) / 10.0))
-        }
-        for r in rows
-    ]
+        })
 
     return jsonify({"origin_pc4": origin, "count": len(result), "results": result})
 
 @app.route("/origins")
 def get_origins():
     db = get_db()
-    rows = db.execute("SELECT DISTINCT pc4_from AS o FROM dtm ORDER BY o").fetchall()
-    return jsonify({"origins": [r["o"] for r in rows]})
+    rows = db.execute("SELECT pc4 FROM origins ORDER BY pc4").fetchall()
+    return jsonify({"origins": [r["pc4"] for r in rows]})
 
 # ---------------------------------------------------------
-# UI: kaart alleen met token (HTML i.p.v. JSON bij fout)
+# UI: kaart alleen met token
 # ---------------------------------------------------------
 
 @app.route("/")
