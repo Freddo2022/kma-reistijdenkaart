@@ -78,7 +78,7 @@
 
   <button style="margin-left:80px;" onclick="resetMap()">🔄 Reset DTM ReistijdenKaart</button>
 
-  <button style="margin-right:10px;" onclick="downloadCSV()">⬇️ Download selectie (CSV))</button>
+  <button style="margin-right:10px;" onclick="downloadCSV()">⬇️ Download selectie (CSV)</button>
 
   <button
     style="margin-left:70px; background-color:#ccffcc; padding:8px 14px; border:1px solid #99dd99; border-radius:4px;"
@@ -97,28 +97,30 @@
 <div id="map"></div>
 
 <script>
-console.log("DTM ReistijdenKaart | build 2026-01-07");
+console.log("DTM ReistijdenKaart | build 2026-01-08 (sqlite+compact arrays)");
 
 // ------------------------------------------------------------
-// 1) API KEY uit URL + helper (MOET EERST)
+// 1) API KEY uit URL + helper
+//    Backend accepteert ?t=... (nieuw) en ?key=... (backward)
 // ------------------------------------------------------------
 const params = new URLSearchParams(window.location.search);
-const API_KEY = params.get("key");
+const API_KEY = params.get("t") || params.get("key");
 
 if (!API_KEY) {
   document.body.innerHTML = `
     <div style="padding:40px;font-family:Arial">
       <h2>🔒 Toegang vereist</h2>
-      <p>Deze reistijdenkaart is alleen toegankelijk met een geldige API-sleutel.</p>
-      <p>Gebruik bijvoorbeeld: <code>/?key=JOUW_SLEUTEL</code></p>
+      <p>Deze reistijdenkaart is alleen toegankelijk met een geldige toegangstoken.</p>
+      <p>Gebruik bijvoorbeeld: <code>/?t=JOUW_SLEUTEL</code></p>
     </div>
   `;
-  throw new Error("Geen API key in URL");
+  throw new Error("Geen API key/token in URL");
 }
 
 function apiUrl(pathAndQuery) {
   const sep = pathAndQuery.includes("?") ? "&" : "?";
-  return `${pathAndQuery}${sep}key=${encodeURIComponent(API_KEY)}`;
+  // We gebruiken 't' als primaire param (werkt ook met jouw Flask get_api_key())
+  return `${pathAndQuery}${sep}t=${encodeURIComponent(API_KEY)}`;
 }
 
 // ------------------------------------------------------------
@@ -166,7 +168,6 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap"
 }).addTo(map);
 
-// Helpt bij situaties waar Leaflet init gebeurt voordat layout klaar is
 setTimeout(() => map.invalidateSize(), 50);
 
 map.createPane("pc4pane");
@@ -179,9 +180,9 @@ let pc4Layer = null;
 let isochroneLayer = null;
 
 let currentOrigin = null;
-let currentTimes = {};
-let currentDistances = {};
-let lastResults = [];
+let currentTimes = {};       // pc4 -> time_min
+let currentDistances = {};   // pc4 -> distance_km
+let lastResults = [];        // [{dest_pc4,time_min,distance_km}, ...] (compat voor iso/csv)
 
 const statusEl = document.getElementById("status");
 
@@ -236,8 +237,8 @@ function showPopup(layer, pc4) {
 
   let html = `<b>PC4 ${pc4}</b><br>`;
   if (t != null) {
-    html += `Reistijd: ${Number(t).toFixed(1)} min<br>`;
-    html += `Afstand: ${Number(d).toFixed(2)} km`;
+    html += `Reistijd: ${Math.round(Number(t))} min<br>`;
+    html += `Afstand: ${Number(d).toFixed(1)} km`;
   } else {
     html += `<i>Geen DTM-gegevens</i>`;
   }
@@ -245,7 +246,7 @@ function showPopup(layer, pc4) {
 }
 
 /* ------------------------------------------------------------
-   ORIGINS DROPDOWN (via /api/v1/origins + key)
+   ORIGINS DROPDOWN
 ------------------------------------------------------------ */
 fetch(apiUrl("/api/v1/origins"))
   .then(async r => {
@@ -298,7 +299,7 @@ function updateChoropleth() {
 }
 
 /* ------------------------------------------------------------
-   ORIGIN SELECT (via /api/v1/dtm + key)
+   ORIGIN SELECT -> /api/v1/dtm (compact arrays)
 ------------------------------------------------------------ */
 document.getElementById("originSelect").addEventListener("change", () => {
 
@@ -308,7 +309,11 @@ document.getElementById("originSelect").addEventListener("change", () => {
   currentOrigin = origin;
   statusEl.textContent = "DTM laden voor " + origin + "...";
 
-  fetch(apiUrl(`/api/v1/dtm?origin=${origin}`))
+  // Aanrader: laad niet de volledige matrix; max_min scheelt veel IO/JSON/memory
+  // Je slider gaat tot 60, maar voor legenda/iso is 180 meestal ruim.
+  const MAX_MIN_LOAD = 180;
+
+  fetch(apiUrl(`/api/v1/dtm?origin=${origin}&max_min=${MAX_MIN_LOAD}`))
     .then(async r => {
       if (!r.ok) {
         const txt = await r.text();
@@ -318,25 +323,36 @@ document.getElementById("originSelect").addEventListener("change", () => {
     })
     .then(data => {
 
-      if (!data || !Array.isArray(data.results)) {
+      // Nieuw formaat verwacht: dest[], t[], d[]
+      if (!data || !Array.isArray(data.dest) || !Array.isArray(data.t) || !Array.isArray(data.d)) {
         console.error("Onverwachte response:", data);
         statusEl.textContent = "DTM laden mislukt (onverwachte response).";
         return;
       }
 
-      lastResults = data.results;
+      lastResults = [];
       currentTimes = {};
       currentDistances = {};
 
-      data.results.forEach(r => {
-        const pc4 = norm(r.dest_pc4);
-        currentTimes[pc4] = r.time_min;
-        currentDistances[pc4] = r.distance_km;
-      });
+      const n = Math.min(data.dest.length, data.t.length, data.d.length);
 
-      statusEl.textContent =
-        `DTM geladen voor ${origin} (${data.results.length} bestemmingen)`;
+      for (let i = 0; i < n; i++) {
+        const pc4 = norm(data.dest[i]);
+        const timeMin = Number(data.t[i]);
+        const distKm = Number(data.d[i]) / 10.0; // d = 0.1 km
 
+        currentTimes[pc4] = timeMin;
+        currentDistances[pc4] = distKm;
+
+        // behoud oude shape voor iso/csv functies
+        lastResults.push({
+          dest_pc4: pc4,
+          time_min: timeMin,
+          distance_km: distKm
+        });
+      }
+
+      statusEl.textContent = `DTM geladen voor ${origin} (${lastResults.length} bestemmingen)`;
       updateChoropleth();
     })
     .catch(err => {
@@ -380,6 +396,7 @@ function resetMap() {
   currentTimes = {};
   currentDistances = {};
   currentOrigin = null;
+  lastResults = [];
   updateChoropleth();
   statusEl.textContent = "Kaart gereset.";
 }
@@ -410,12 +427,12 @@ function downloadCSV() {
     alert(`Demo: download beperkt tot ${APP_CFG.csv_max_rows} rijen.`);
   }
 
-  let csv = "origin_pc4,dest_pc4,time_min,distance_km\n";
+  let csvOut = "origin_pc4,dest_pc4,time_min,distance_km\n";
   rows.forEach(r => {
-    csv += `${currentOrigin},${norm(r.dest_pc4)},${r.time_min},${r.distance_km}\n`;
+    csvOut += `${currentOrigin},${norm(r.dest_pc4)},${r.time_min},${r.distance_km.toFixed(1)}\n`;
   });
 
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob([csvOut], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");
