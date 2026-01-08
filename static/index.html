@@ -311,7 +311,7 @@ document.getElementById("originSelect").addEventListener("change", () => {
 
   // Aanrader: laad niet de volledige matrix; max_min scheelt veel IO/JSON/memory
   // Je slider gaat tot 60, maar voor legenda/iso is 180 meestal ruim.
-  const MAX_MIN_LOAD = 180;
+  const MAX_MIN_LOAD = 90;
 
   fetch(apiUrl(`/api/v1/dtm?origin=${origin}&max_min=${MAX_MIN_LOAD}`))
     .then(async r => {
