@@ -97,11 +97,10 @@
 <div id="map"></div>
 
 <script>
-console.log("DTM ReistijdenKaart | build 2026-01-08 (sqlite+compact arrays)");
+console.log("DTM ReistijdenKaart | build 2026-01-08 (sqlite+compact arrays + faster render)");
 
 // ------------------------------------------------------------
 // 1) API KEY uit URL + helper
-//    Backend accepteert ?t=... (nieuw) en ?key=... (backward)
 // ------------------------------------------------------------
 const params = new URLSearchParams(window.location.search);
 const API_KEY = params.get("t") || params.get("key");
@@ -119,7 +118,6 @@ if (!API_KEY) {
 
 function apiUrl(pathAndQuery) {
   const sep = pathAndQuery.includes("?") ? "&" : "?";
-  // We gebruiken 't' als primaire param (werkt ook met jouw Flask get_api_key())
   return `${pathAndQuery}${sep}t=${encodeURIComponent(API_KEY)}`;
 }
 
@@ -148,7 +146,6 @@ fetch(apiUrl("/api/v1/me"))
   })
   .catch(err => {
     console.error("Config laden mislukt:", err);
-    // Niet stoppen; kaart kan nog steeds werken.
   });
 
 /* ------------------------------------------------------------
@@ -182,7 +179,11 @@ let isochroneLayer = null;
 let currentOrigin = null;
 let currentTimes = {};       // pc4 -> time_min
 let currentDistances = {};   // pc4 -> distance_km
-let lastResults = [];        // [{dest_pc4,time_min,distance_km}, ...] (compat voor iso/csv)
+
+// In plaats van lastResults (objecten), bewaren we arrays (veel sneller/lichter)
+let lastDest = [];
+let lastT = [];
+let lastD = []; // deci-km (0.1 km)
 
 const statusEl = document.getElementById("status");
 
@@ -281,21 +282,38 @@ function getColor(t) {
 }
 
 /* ------------------------------------------------------------
-   CHOROPLETH UPDATE
+   CHOROPLETH UPDATE (CHUNKED, voorkomt UI-freeze)
 ------------------------------------------------------------ */
-function updateChoropleth() {
+function updateChoroplethChunked() {
   if (!pc4Layer) return;
 
-  pc4Layer.setStyle(f => {
-    const pc4 = norm(f.properties.Name);
-    const t = currentTimes[pc4];
-    return {
-      color: "#555",
-      weight: 0.5,
-      fillOpacity: t != null ? 0.7 : 0.1,
-      fillColor: getColor(t)
-    };
-  });
+  const layers = [];
+  pc4Layer.eachLayer(l => layers.push(l));
+
+  let i = 0;
+  const CHUNK = 200; // desktop: 150-300 is vaak fijn
+
+  function step() {
+    const end = Math.min(i + CHUNK, layers.length);
+    for (; i < end; i++) {
+      const layer = layers[i];
+      const f = layer.feature;
+      const pc4 = norm(f.properties.Name);
+      const t = currentTimes[pc4];
+
+      layer.setStyle({
+        color: "#555",
+        weight: 0.5,
+        fillOpacity: t != null ? 0.7 : 0.1,
+        fillColor: getColor(t)
+      });
+    }
+    if (i < layers.length) {
+      requestAnimationFrame(step);
+    }
+  }
+
+  requestAnimationFrame(step);
 }
 
 /* ------------------------------------------------------------
@@ -309,9 +327,10 @@ document.getElementById("originSelect").addEventListener("change", () => {
   currentOrigin = origin;
   statusEl.textContent = "DTM laden voor " + origin + "...";
 
-  // Aanrader: laad niet de volledige matrix; max_min scheelt veel IO/JSON/memory
-  // Je slider gaat tot 60, maar voor legenda/iso is 180 meestal ruim.
+  // Desktop: 90 (zoals je vroeg) – veel minder payload dan 180
   const MAX_MIN_LOAD = 90;
+
+  const t0 = performance.now();
 
   fetch(apiUrl(`/api/v1/dtm?origin=${origin}&max_min=${MAX_MIN_LOAD}`))
     .then(async r => {
@@ -323,37 +342,37 @@ document.getElementById("originSelect").addEventListener("change", () => {
     })
     .then(data => {
 
-      // Nieuw formaat verwacht: dest[], t[], d[]
       if (!data || !Array.isArray(data.dest) || !Array.isArray(data.t) || !Array.isArray(data.d)) {
         console.error("Onverwachte response:", data);
         statusEl.textContent = "DTM laden mislukt (onverwachte response).";
         return;
       }
 
-      lastResults = [];
+      // Reset
       currentTimes = {};
       currentDistances = {};
 
-      const n = Math.min(data.dest.length, data.t.length, data.d.length);
+      // Bewaar arrays (geen objecten)
+      lastDest = data.dest;
+      lastT = data.t;
+      lastD = data.d;
+
+      const n = Math.min(lastDest.length, lastT.length, lastD.length);
 
       for (let i = 0; i < n; i++) {
-        const pc4 = norm(data.dest[i]);
-        const timeMin = Number(data.t[i]);
-        const distKm = Number(data.d[i]) / 10.0; // d = 0.1 km
+        const pc4 = norm(lastDest[i]);
+        const timeMin = Number(lastT[i]);
+        const distKm = Number(lastD[i]) / 10.0;
 
         currentTimes[pc4] = timeMin;
         currentDistances[pc4] = distKm;
-
-        // behoud oude shape voor iso/csv functies
-        lastResults.push({
-          dest_pc4: pc4,
-          time_min: timeMin,
-          distance_km: distKm
-        });
       }
 
-      statusEl.textContent = `DTM geladen voor ${origin} (${lastResults.length} bestemmingen)`;
-      updateChoropleth();
+      const t1 = performance.now();
+      statusEl.textContent = `DTM geladen voor ${origin} (${n} bestemmingen) — ${Math.round(t1 - t0)} ms`;
+
+      // Chunked repaint (voorkomt “hang”)
+      updateChoroplethChunked();
     })
     .catch(err => {
       console.error("DTM laden mislukt:", err);
@@ -362,22 +381,25 @@ document.getElementById("originSelect").addEventListener("change", () => {
 });
 
 /* ------------------------------------------------------------
-   ISOCHRONE
+   ISOCHRONE (Set, snel)
 ------------------------------------------------------------ */
 function showIsochrone() {
-  if (!currentOrigin) return;
+  if (!currentOrigin || !pc4Layer) return;
 
   const maxMin = parseFloat(document.getElementById("iso_min").value);
 
   if (isochroneLayer) map.removeLayer(isochroneLayer);
 
-  const within = lastResults
-    .filter(r => r.time_min <= maxMin)
-    .map(r => norm(r.dest_pc4));
+  const withinSet = new Set();
+  const n = Math.min(lastDest.length, lastT.length);
+
+  for (let i = 0; i < n; i++) {
+    if (Number(lastT[i]) <= maxMin) withinSet.add(norm(lastDest[i]));
+  }
 
   isochroneLayer = L.geoJSON(pc4Layer.toGeoJSON(), {
     pane: "isochronepane",
-    filter: f => within.includes(norm(f.properties.Name)),
+    filter: f => withinSet.has(norm(f.properties.Name)),
     style: {
       color: "purple",
       fillColor: "purple",
@@ -396,8 +418,10 @@ function resetMap() {
   currentTimes = {};
   currentDistances = {};
   currentOrigin = null;
-  lastResults = [];
-  updateChoropleth();
+  lastDest = [];
+  lastT = [];
+  lastD = [];
+  updateChoroplethChunked();
   statusEl.textContent = "Kaart gereset.";
 }
 
@@ -415,22 +439,35 @@ function downloadCSV() {
   if (!currentOrigin) return;
 
   const maxMin = parseFloat(document.getElementById("iso_min").value);
-  let rows = lastResults.filter(r => r.time_min <= maxMin);
+
+  const n = Math.min(lastDest.length, lastT.length, lastD.length);
+  const rows = [];
+
+  for (let i = 0; i < n; i++) {
+    const t = Number(lastT[i]);
+    if (t <= maxMin) {
+      rows.push(i);
+    }
+  }
 
   if (!rows.length) {
     alert("Geen resultaten om te downloaden binnen de gekozen reistijd.");
     return;
   }
 
+  let rowsLimited = rows;
   if (APP_CFG.plan === "demo" && APP_CFG.csv_max_rows && rows.length > APP_CFG.csv_max_rows) {
-    rows = rows.slice(0, APP_CFG.csv_max_rows);
+    rowsLimited = rows.slice(0, APP_CFG.csv_max_rows);
     alert(`Demo: download beperkt tot ${APP_CFG.csv_max_rows} rijen.`);
   }
 
   let csvOut = "origin_pc4,dest_pc4,time_min,distance_km\n";
-  rows.forEach(r => {
-    csvOut += `${currentOrigin},${norm(r.dest_pc4)},${r.time_min},${r.distance_km.toFixed(1)}\n`;
-  });
+  for (const idx of rowsLimited) {
+    const destPc4 = norm(lastDest[idx]);
+    const timeMin = Number(lastT[idx]);
+    const distKm = Number(lastD[idx]) / 10.0;
+    csvOut += `${currentOrigin},${destPc4},${timeMin},${distKm.toFixed(1)}\n`;
+  }
 
   const blob = new Blob([csvOut], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
