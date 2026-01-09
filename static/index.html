@@ -72,8 +72,8 @@
   </select>
 
   <label>Kies reistijd (min): </label>
-  <input id="iso_min" type="range" min="5" max="120" value="20" step="5" oninput="updateIsoLabel(this.value)">
-  <span id="iso_value">20</span> min
+  <input id="iso_min" type="range" min="5" max="240" value="20" step="10" oninput="updateIsoLabel(this.value)">
+  <span id="iso_value">60</span> min
   <button style="margin-left:12px;" onclick="showIsochrone()">▶️ Toon Afstanden en Reistijden</button>
 
   <button style="margin-left:80px;" onclick="resetMap()">🔄 Reset DTM ReistijdenKaart</button>
@@ -328,7 +328,7 @@ document.getElementById("originSelect").addEventListener("change", () => {
   statusEl.textContent = "DTM laden voor " + origin + "...";
 
   // Desktop: 90 (zoals je vroeg) – veel minder payload dan 180
-  const MAX_MIN_LOAD = 150;
+  const MAX_MIN_LOAD = 240;
 
   const t0 = performance.now();
 
