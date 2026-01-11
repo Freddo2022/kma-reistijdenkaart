@@ -211,12 +211,12 @@ print("DTM SQLite ready")
 CLIENTS = {
     "demo_290361": {
         "plan": "demo",
-        "title": "ReistijdenKaart | DriveTimeMatrix PC4-centroiden",
+        "title": "KilometerAfstanden.nl | ReistijdenKaart | DriveTimeMatrix PC4-centroiden",
         "csv_max_rows": 20
     },
     "medialane_070126": {
         "plan": "pro",
-        "title": "ReistijdenKaart | DriveTimeMatrix PC4-centroiden",
+        "title": "KilometerAfstanden.nl | ReistijdenKaart | DriveTimeMatrix PC4-centroiden",
         "csv_max_rows": None
     }
 }
